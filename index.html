@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>MindAR + Swing</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Hindi:ital@0;1&display=swap" rel="stylesheet">
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/aframe-extras@6.1.1/dist/aframe-extras.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+
+    <style>
+      body { margin: 0; overflow: hidden; background: #000; }
+
+      #vignette {
+        position: fixed; inset: 0;
+        background: radial-gradient(ellipse at center,
+          transparent 28%, rgba(8,4,18,0.55) 62%, rgba(3,1,10,0.92) 100%);
+        pointer-events: none; z-index: 99998;
+      }
+
+      #particles {
+        position: fixed; inset: 0; pointer-events: none;
+        z-index: 99999; opacity: 0; transition: opacity 2s ease;
+      }
+      #particles.active { opacity: 1; }
+
+      #memoryEcho { position: fixed; inset: 0; pointer-events: none; z-index: 100000; }
+
+      #grain {
+        position: fixed; inset: 0; pointer-events: none; z-index: 100001;
+        opacity: 0; transition: opacity 1.6s ease;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.12'/%3E%3C/svg%3E");
+        background-repeat: repeat; background-size: 200px 200px;
+        animation: grainShift 0.1s steps(1) infinite; mix-blend-mode: overlay;
+      }
+      #grain.active { opacity: 1; }
+      @keyframes grainShift {
+        0%   { background-position:   0px   0px; }
+        25%  { background-position: -60px -40px; }
+        50%  { background-position:  30px  55px; }
+        75%  { background-position: -45px  15px; }
+        100% { background-position:  15px -30px; }
+      }
+
+      #letterbox-top, #letterbox-bottom {
+        position: fixed; left: 0; right: 0; height: 0;
+        background: #000; pointer-events: none; z-index: 100002;
+        transition: height 1.1s cubic-bezier(0.77,0,0.18,1);
+      }
+      #letterbox-top    { top: 0; }
+      #letterbox-bottom { bottom: 0; }
+      .letterbox-active #letterbox-top,
+      .letterbox-active #letterbox-bottom { height: 10vh; }
+
+      a-scene.memory-active {
+        filter: sepia(0.30) saturate(0.80) brightness(0.92) contrast(1.05);
+        transition: filter 1.8s ease;
+      }
+
+      #scanFrame {
+        position: fixed; left: 50%; top: 50%;
+        transform: translate(-50%,-50%);
+        width: 68vw; max-width: 360px; aspect-ratio: 1/1;
+        border: 3px solid rgba(255,255,255,0.85); border-radius: 18px;
+        box-shadow: 0 0 0 9999px rgba(0,0,0,0.25);
+        pointer-events: none; z-index: 999999;
+      }
+
+      #scanText {
+        position: fixed; left: 50%; top: calc(50% + 220px);
+        transform: translateX(-50%); padding: 10px 14px;
+        border-radius: 12px; background: rgba(0,0,0,0.55);
+        color: #fff; font-family: system-ui, sans-serif; font-size: 14px;
+        z-index: 999999; pointer-events: none; transition: opacity 0.4s;
+      }
+
+      #tapHint {
+        position: fixed; left: 50%; bottom: 60px;
+        transform: translateX(-50%); padding: 12px 20px;
+        border-radius: 30px; background: rgba(255,80,80,0.85);
+        color: #fff; font-family: system-ui, sans-serif;
+        font-size: 16px; font-weight: 600; z-index: 999999;
+        pointer-events: none; opacity: 0; transition: opacity 0.5s;
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      #tapHint.visible { opacity: 1; }
+      @keyframes pulse {
+        0%,100% { transform: translateX(-50%) scale(1); }
+        50%     { transform: translateX(-50%) scale(1.05); }
+      }
+
+      /* ── Plant layers ─────────────────────────── */
+      .plant-layer {
+        position: fixed; inset: 0;
+        width: 100%; height: 100%;
+        object-fit: cover; object-position: center;
+        pointer-events: none;
+        z-index: 100003;
+        opacity: 0;
+        will-change: transform, opacity;
+      }
+      #plant-blue  { clip-path: inset(100% 0% 0% 0%); }
+      #plant-green { transform-origin: bottom center; }
+      #plant-pink  { transform-origin: center center; }
+
+      /* ── Splash ───────────────────────────────── */
+      #splash {
+        position: fixed; inset: 0; z-index: 1000000;
+        background: #1e1a40; display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        cursor: pointer; user-select: none; -webkit-user-select: none;
+        transition: opacity 1.0s ease;
+      }
+      #splash.fade-out { opacity: 0; pointer-events: none; }
+      #splash-eyebrow {
+        font-family: Georgia, serif; font-size: clamp(11px,3vw,14px);
+        color: rgba(255,245,225,0.45); letter-spacing: 0.18em; margin-top: 0.6em;
+      }
+      #splash-title {
+        font-family: 'Tiro Devanagari Hindi', Georgia, serif; font-style: italic;
+        font-size: clamp(36px,11vw,64px); color: #FFF5E1;
+        letter-spacing: 0.04em; line-height: 1.2; text-align: center; padding: 0 8vw;
+      }
+      #splash-rule { width: 38px; height: 1px; background: rgba(255,245,225,0.25); margin: 2em auto; }
+      #splash-tap {
+        font-family: Georgia, serif; font-size: clamp(11px,3vw,14px);
+        color: rgba(255,245,225,0.5); letter-spacing: 0.24em; text-transform: uppercase;
+        animation: tapPulse 2.4s ease-in-out infinite;
+      }
+      @keyframes tapPulse { 0%,100%{opacity:0.3;} 50%{opacity:1;} }
+    </style>
+
+    <script>
+    AFRAME.registerComponent("swing-ar", {
+      init() {
+        const self       = this;
+        const target     = this.el;
+        const rig        = target.querySelector("#swingRig");
+        const modelEl    = target.querySelector("#swingModel");
+        const swingAudio = document.querySelector("#swingAudio");
+        const tapHint    = document.querySelector("#tapHint");
+        const scanText   = document.querySelector("#scanText");
+        const plantBlue  = document.getElementById("plant-blue");
+        const plantGreen = document.getElementById("plant-green");
+        const plantPink  = document.getElementById("plant-pink");
+
+        let triggered = false;
+        let swayAnims = [];
+        let pinkAnim  = null;
+
+        rig.setAttribute("visible", false);
+
+        // ── MODEL LOAD ──────────────────────────────────────────
+        modelEl.addEventListener("model-loaded", (e) => {
+          const model = e.detail.model;
+          console.log("✅ Swing model loaded");
+          if (model?.animations?.length) {
+            self.mixer = new THREE.AnimationMixer(model);
+            self.clips = model.animations.map(clip => self.mixer.clipAction(clip));
+            console.log(`🎬 ${self.clips.length} clip(s)`);
+          }
+        });
+
+        // ── Mesh helpers ────────────────────────────────────────
+        const getMeshes = () => {
+          const meshes = [];
+          rig.object3D.traverse(child => {
+            if (child.isMesh) {
+              if (!child.userData.matCloned) {
+                child.material = child.material.clone();
+                child.userData.matCloned = true;
+              }
+              meshes.push(child);
+            }
+          });
+          return meshes;
+        };
+        const setOpacity = (meshes, val) => {
+          meshes.forEach(m => { m.material.transparent = val < 1; m.material.opacity = val; });
+        };
+
+        // ── RESET PLANTS ────────────────────────────────────────
+        const resetPlants = () => {
+          swayAnims.forEach(a => a.pause());
+          swayAnims = [];
+          if (pinkAnim) { pinkAnim.pause(); pinkAnim = null; }
+          anime.set(plantBlue,  { opacity: 0, clipPath: "inset(100% 0% 0% 0%)" });
+          anime.set(plantGreen, { opacity: 0, translateX: 0, translateY: 0, rotate: 0, skewX: 0 });
+          anime.set(plantPink,  { opacity: 0, scale: 0.7, filter: "brightness(1) saturate(1)" });
+        };
+
+        // ── ORGANIC LEAF SWAY — 4 independent loops ─────────────
+        const startLeafSway = () => {
+          const drift = anime({
+            targets: plantGreen,
+            translateX: [
+              { value:  8, duration: 4200, easing: "easeInOutSine" },
+              { value: -5, duration: 5100, easing: "easeInOutSine" },
+              { value:  3, duration: 3800, easing: "easeInOutSine" },
+              { value: -8, duration: 4600, easing: "easeInOutSine" },
+            ],
+            loop: true,
+          });
+          const bob = anime({
+            targets: plantGreen,
+            translateY: [
+              { value: -6, duration: 5800, easing: "easeInOutQuad" },
+              { value:  3, duration: 4300, easing: "easeInOutQuad" },
+              { value: -2, duration: 6100, easing: "easeInOutQuad" },
+              { value:  5, duration: 4900, easing: "easeInOutQuad" },
+            ],
+            loop: true,
+          });
+          const flutter = anime({
+            targets: plantGreen,
+            rotate: [
+              { value:  1.2, duration: 6200, easing: "easeInOutSine" },
+              { value: -0.8, duration: 5400, easing: "easeInOutSine" },
+              { value:  0.5, duration: 7100, easing: "easeInOutSine" },
+              { value: -1.4, duration: 5800, easing: "easeInOutSine" },
+            ],
+            loop: true,
+          });
+          const bend = anime({
+            targets: plantGreen,
+            skewX: [
+              { value:  0.8, duration: 7300, easing: "easeInOutSine" },
+              { value: -0.6, duration: 6100, easing: "easeInOutSine" },
+              { value:  1.0, duration: 5700, easing: "easeInOutSine" },
+              { value: -0.4, duration: 8200, easing: "easeInOutSine" },
+            ],
+            loop: true,
+          });
+          swayAnims = [drift, bob, flutter, bend];
+        };
+
+        // ── BLOOM PLANTS — auto on marker found ─────────────────
+        const bloomPlants = (onComplete) => {
+
+          // 1. Blue lines — slow grow from bottom
+          anime({
+            targets: plantBlue,
+            opacity: [0, 1],
+            duration: 400,
+            easing: "linear",
+            complete: () => {
+              anime({
+                targets: plantBlue,
+                clipPath: ["inset(100% 0% 0% 0%)", "inset(0% 0% 0% 0%)"],
+                duration: 4000,
+                easing: "easeInOutCubic",
+              });
+            }
+          });
+
+          // 2. Green leaves — fade up, then underwater drift
+          anime({
+            targets: plantGreen,
+            opacity: [0, 0.95],
+            translateY: [40, 0],
+            duration: 2200,
+            delay: 1200,
+            easing: "easeOutCubic",
+            complete: () => startLeafSway()
+          });
+
+          // 3. Pink fills — elastic bloom last, then glow pulse
+          anime({
+            targets: plantPink,
+            opacity: [0, 1],
+            scale:   [0.7, 1],
+            duration: 1400,
+            delay: 2800,
+            easing: "easeOutElastic(1, 0.6)",
+            complete: () => {
+              pinkAnim = anime({
+                targets: plantPink,
+                filter: [
+                  "brightness(1) saturate(1)",
+                  "brightness(1.35) saturate(1.3)",
+                  "brightness(1) saturate(1)",
+                ],
+                duration: 3400, loop: true, easing: "easeInOutSine",
+              });
+              // Plants done — now show GLB
+              if (onComplete) onComplete();
+            }
+          });
+        };
+
+        // ── RE-ANIMATE PLANTS — on tap with swing ───────────────
+        const reanimatePlants = () => {
+          // Stop current loops
+          swayAnims.forEach(a => a.pause()); swayAnims = [];
+          if (pinkAnim) { pinkAnim.pause(); pinkAnim = null; }
+
+          // Blue shimmer
+          anime({
+            targets: plantBlue,
+            opacity: [1, 0.5, 1],
+            duration: 1800,
+            easing: "easeInOutSine",
+          });
+
+          // Green — surge then return to drift
+          anime({
+            targets: plantGreen,
+            translateX: [{ value: 16, duration: 500, easing: "easeOutQuad" }],
+            complete: () => startLeafSway()
+          });
+
+          // Pink — bright burst then resume glow
+          anime({
+            targets: plantPink,
+            filter: [
+              "brightness(1) saturate(1)",
+              "brightness(1.9) saturate(1.7)",
+              "brightness(1) saturate(1)",
+            ],
+            scale: [1, 1.08, 1],
+            duration: 1000,
+            easing: "easeOutQuad",
+            complete: () => {
+              pinkAnim = anime({
+                targets: plantPink,
+                filter: [
+                  "brightness(1) saturate(1)",
+                  "brightness(1.35) saturate(1.3)",
+                  "brightness(1) saturate(1)",
+                ],
+                duration: 3400, loop: true, easing: "easeInOutSine",
+              });
+            }
+          });
+        };
+
+        // ── SHOW GLB — called after plants finish blooming ──────
+        const showGLB = () => {
+          const meshes = getMeshes();
+          setOpacity(meshes, 0);
+          rig.setAttribute("visible", true);
+          rig.removeAttribute("animation__pop");
+          rig.setAttribute("scale", "0.001 0.001 0.001");
+          rig.setAttribute("animation__pop", {
+            property: "scale", to: "10 10 10",
+            dur: 1400, easing: "easeOutExpo"
+          });
+          const proxy = { v: 0 };
+          anime({
+            targets: proxy, v: 1, duration: 1600, easing: "easeOutCubic",
+            update:   () => setOpacity(meshes, proxy.v),
+            complete: () => {
+              setOpacity(meshes, 1);
+              tapHint.textContent = "🌿 Tap to Swing";
+              tapHint.classList.add("visible");
+            }
+          });
+        };
+
+        // ── TRIGGER SWING — on tap ───────────────────────────────
+        const triggerSwing = () => {
+          if (triggered) return;
+          triggered = true;
+          tapHint.classList.remove("visible");
+
+          // GLB animation
+          if (self.clips?.length) {
+            self.clips.forEach(a => { a.reset(); a.play(); });
+          }
+
+          // Audio loops
+          if (swingAudio) {
+            swingAudio.loop = true;
+            swingAudio.currentTime = 0;
+            swingAudio.play().catch(e => console.warn("Audio:", e));
+          }
+
+          // Plants react
+          reanimatePlants();
+
+          // Echo rings
+          window.MemoryEcho?.burst();
+
+          // Re-enable tap after 4s
+          setTimeout(() => {
+            if (rig.getAttribute("visible")) {
+              triggered = false;
+              tapHint.classList.add("visible");
+            }
+          }, 4000);
+        };
+
+        // ── SHOW — marker found ──────────────────────────────────
+        const show = () => {
+          triggered = false;
+          scanText.style.opacity = "0";
+          window.MemoryFX?.start();
+          resetPlants();
+          // Plants bloom → then GLB appears
+          bloomPlants(() => showGLB());
+        };
+
+        // ── HIDE — marker lost ───────────────────────────────────
+        const hide = () => {
+          window.MemoryFX?.stop();
+          tapHint.classList.remove("visible");
+          triggered = false;
+          resetPlants();
+
+          if (swingAudio) {
+            swingAudio.pause();
+            swingAudio.currentTime = 0;
+            swingAudio.loop = false;
+          }
+          if (self.clips) self.clips.forEach(a => a.stop());
+
+          if (rig.getAttribute("visible")) {
+            const meshes = getMeshes();
+            const proxy  = { v: 1 };
+            anime({
+              targets: proxy, v: 0, duration: 500, easing: "easeInQuad",
+              update:   () => setOpacity(meshes, proxy.v),
+              complete: () => {
+                rig.setAttribute("visible", false);
+                setOpacity(meshes, 1);
+                scanText.style.opacity = "1";
+              }
+            });
+          } else {
+            scanText.style.opacity = "1";
+          }
+        };
+
+        // ── EVENTS ──────────────────────────────────────────────
+        document.addEventListener("touchstart", (e) => {
+          if (rig.getAttribute("visible") && !triggered) { e.preventDefault(); triggerSwing(); }
+        }, { passive: false });
+        document.addEventListener("click", () => {
+          if (rig.getAttribute("visible") && !triggered) triggerSwing();
+        });
+
+        target.addEventListener("targetFound", show);
+        target.addEventListener("targetLost",  hide);
+      },
+
+      tick(time, delta) {
+        if (this.mixer) this.mixer.update(delta / 1000);
+      }
+    });
+    </script>
+  </head>
+
+  <body>
+
+    <div id="splash">
+      <div id="splash-title">Gyanlok</div>
+      <div id="splash-eyebrow">Plot 34, Sector 19</div>
+      <div id="splash-rule"></div>
+      <div id="splash-tap">touch to begin</div>
+    </div>
+
+    <div id="vignette"></div>
+    <canvas id="particles"></canvas>
+    <canvas id="memoryEcho"></canvas>
+    <div id="grain"></div>
+    <div id="letterbox-top"></div>
+    <div id="letterbox-bottom"></div>
+    <div id="scanFrame"></div>
+    <div id="scanText">Point your camera at the marker</div>
+    <div id="tapHint">🌿 Tap to Swing</div>
+
+    <!-- Plant PNGs -->
+    <img id="plant-blue"  class="plant-layer" src="bluelines.png"   alt="" />
+    <img id="plant-green" class="plant-layer" src="greenleaves.png" alt="" />
+    <img id="plant-pink"  class="plant-layer" src="pinkfills.png"   alt="" />
+
+    <a-scene
+      mindar-image="imageTargetSrc: targets.mind; autoStart: false; uiScanning: false; uiLoading: false; filterMinCF: 0.001; filterBeta: 0.001;"
+      renderer="colorManagement: true; physicallyCorrectLights: true"
+      vr-mode-ui="enabled: false"
+      device-orientation-permission-ui="enabled: true"
+      loading-screen="enabled: false"
+    >
+      <a-assets>
+        <a-asset-item id="swingGLB" src="swing1.glb"></a-asset-item>
+        <audio id="swingAudio" src="swingsound.mp3" preload="auto"></audio>
+      </a-assets>
+
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+      <a-entity light="type: ambient; intensity: 0.9"></a-entity>
+      <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
+
+      <a-entity mindar-image-target="targetIndex: 0" swing-ar>
+        <a-entity id="swingRig" position="0 0 0" rotation="0 0 0" scale="10 10 10">
+          <a-gltf-model id="swingModel" src="#swingGLB" position="0 0 0" rotation="0 0 0"></a-gltf-model>
+        </a-entity>
+      </a-entity>
+    </a-scene>
+
+    <script>
+    /* ── Particles ─────────────────────────────────────────────── */
+    (() => {
+      const canvas=document.getElementById("particles"), ctx=canvas.getContext("2d");
+      const COLORS=["rgba(255,240,200,PAL)","rgba(220,200,255,PAL)","rgba(255,220,160,PAL)","rgba(200,215,255,PAL)","rgba(255,255,230,PAL)"];
+      const SIZES=[{rMin:2,rMax:5,aMin:0.25,aMax:0.55,count:20},{rMin:6,rMax:14,aMin:0.18,aMax:0.40,count:14},{rMin:18,rMax:32,aMin:0.06,aMax:0.14,count:6}];
+      let W,H,particles=[],rafId;
+      const resize=()=>{W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight;};
+      window.addEventListener("resize",resize);resize();
+      const rand=(a,b)=>Math.random()*(b-a)+a;
+      const spawn=t=>({x:rand(0,W),y:rand(0,H),r:rand(t.rMin,t.rMax),baseAlpha:rand(t.aMin,t.aMax),alpha:0,speed:rand(0.08,0.35)*(1/(t.rMin*0.18+1)),sway:rand(0.002,0.009),phase:rand(0,Math.PI*2),breathe:rand(0.008,0.022),breatheP:rand(0,Math.PI*2),color:COLORS[Math.floor(rand(0,COLORS.length))]});
+      SIZES.forEach(t=>{for(let i=0;i<t.count;i++)particles.push(spawn(t));});
+      const draw=()=>{
+        ctx.clearRect(0,0,W,H);
+        particles.forEach(p=>{
+          p.phase+=p.sway;p.breatheP+=p.breathe;p.y-=p.speed;p.x+=Math.sin(p.phase)*0.5;
+          p.alpha=p.baseAlpha*(0.6+0.4*Math.sin(p.breatheP));
+          if(p.y+p.r<0){const t=SIZES[Math.floor(rand(0,SIZES.length))];Object.assign(p,spawn(t),{y:H+p.r,x:rand(0,W)});}
+          const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r);
+          g.addColorStop(0,p.color.replace("PAL",p.alpha.toFixed(3)));
+          g.addColorStop(0.45,p.color.replace("PAL",(p.alpha*0.55).toFixed(3)));
+          g.addColorStop(1,p.color.replace("PAL","0"));
+          ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
+        });
+        rafId=requestAnimationFrame(draw);
+      };
+      window.MemoryFX={
+        start(){canvas.classList.add("active");document.getElementById("grain").classList.add("active");document.body.classList.add("letterbox-active");document.querySelector("a-scene")?.classList.add("memory-active");if(!rafId)rafId=requestAnimationFrame(draw);},
+        stop(){canvas.classList.remove("active");document.getElementById("grain").classList.remove("active");document.body.classList.remove("letterbox-active");document.querySelector("a-scene")?.classList.remove("memory-active");}
+      };
+    })();
+    </script>
+
+    <script>
+    /* ── Memory Echo rings ─────────────────────────────────────── */
+    (() => {
+      const canvas=document.getElementById("memoryEcho"),ctx=canvas.getContext("2d");
+      let W,H;
+      const resize=()=>{W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight;};
+      window.addEventListener("resize",resize);resize();
+      const RC=["rgba(255,240,200,","rgba(220,200,255,","rgba(255,200,140,","rgba(200,220,255,","rgba(255,255,220,"];
+      let rings=[],rafId=null,active=false;
+      const rand=(a,b)=>Math.random()*(b-a)+a;
+      const spawnRing=d=>({cx:W/2+rand(-30,30),cy:H/2+rand(-40,40),r:rand(10,40),maxR:rand(W*0.38,W*0.72),speed:rand(1.4,2.8),wobble:rand(0.018,0.055),wobbleAmp:rand(4,14),wobblePhase:rand(0,Math.PI*2),segments:Math.floor(rand(60,90)),color:RC[Math.floor(rand(0,RC.length))],alpha:0,maxAlpha:rand(0.28,0.55),width:rand(1.2,3.0),delay:d,done:false});
+      const drawFrame=()=>{
+        ctx.clearRect(0,0,W,H);
+        rings.forEach(ring=>{
+          if(ring.delay>0){ring.delay--;return;}
+          ring.r+=ring.speed;ring.wobblePhase+=ring.wobble;
+          const p=ring.r/ring.maxR;
+          if(p<0.12)ring.alpha=(p/0.12)*ring.maxAlpha;
+          else if(p<0.60)ring.alpha=ring.maxAlpha;
+          else ring.alpha=ring.maxAlpha*(1-(p-0.60)/0.40);
+          if(ring.alpha<=0||ring.r>=ring.maxR){ring.done=true;return;}
+          ctx.beginPath();
+          for(let i=0;i<=ring.segments;i++){const a=(i/ring.segments)*Math.PI*2,w=Math.sin(a*3+ring.wobblePhase)*ring.wobbleAmp,r=ring.r+w;i===0?ctx.moveTo(ring.cx+Math.cos(a)*r,ring.cy+Math.sin(a)*r):ctx.lineTo(ring.cx+Math.cos(a)*r,ring.cy+Math.sin(a)*r);}
+          ctx.closePath();ctx.strokeStyle=ring.color+ring.alpha.toFixed(3)+")";ctx.lineWidth=ring.width;ctx.stroke();
+        });
+        rings=rings.filter(r=>!r.done);
+        if(rings.length>0||!active)rafId=requestAnimationFrame(drawFrame);
+        else{ctx.clearRect(0,0,W,H);rafId=null;}
+      };
+      window.MemoryEcho={
+        burst(){active=true;rings=[];[0,18,34,52,72,95,122].forEach(d=>rings.push(spawnRing(d)));if(!rafId)rafId=requestAnimationFrame(drawFrame);},
+        stop(){active=false;}
+      };
+    })();
+    </script>
+
+    <script>
+    /* ── Splash ────────────────────────────────────────────────── */
+    (() => {
+      const splash=document.getElementById("splash"),sceneEl=document.querySelector("a-scene");
+      splash.addEventListener("click",()=>{
+        ["swingAudio"].forEach(id=>{const a=document.getElementById(id);if(!a)return;const prev=a.muted;a.muted=true;a.play().then(()=>{a.pause();a.currentTime=0;a.muted=prev;}).catch(()=>{a.muted=prev;});});
+        const ka=document.createElement("audio");
+        ka.src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+        ka.loop=true;ka.volume=0.001;document.body.appendChild(ka);ka.play().catch(()=>{});
+        const start=()=>{try{sceneEl.systems["mindar-image-system"].start();}catch(e){}};
+        if(sceneEl.hasLoaded)start();else sceneEl.addEventListener("loaded",start,{once:true});
+        splash.classList.add("fade-out");setTimeout(()=>{splash.remove();},1200);
+      },{once:true});
+    })();
+    </script>
+
+  </body>
+</html>
