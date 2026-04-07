@@ -103,9 +103,9 @@
         opacity: 0;
         will-change: transform, opacity;
       }
-      #plant-blue  { clip-path: inset(100% 0% 0% 0%); }
-      #plant-green { transform-origin: bottom center; }
-      #plant-pink  { transform-origin: center center; }
+      #plant-blue  { clip-path: inset(100% 0% 0% 0%); object-position: left center; }
+      #plant-green { transform-origin: bottom right; object-position: right bottom; }
+      #plant-pink  { transform-origin: center center; object-position: left center; }
 
       /* ── Splash ───────────────────────────────── */
       #splash {
@@ -141,7 +141,9 @@
         const target     = this.el;
         const rig        = target.querySelector("#swingRig");
         const modelEl    = target.querySelector("#swingModel");
-        const swingAudio = document.querySelector("#swingAudio");
+        const swingAudio  = document.querySelector("#swingAudio");
+        const monkeyAudio = document.querySelector("#monkeyAudio");
+        const birdAudio   = document.querySelector("#birdAudio");
         const tapHint    = document.querySelector("#tapHint");
         const scanText   = document.querySelector("#scanText");
         const plantBlue  = document.getElementById("plant-blue");
@@ -161,7 +163,9 @@
           if (model?.animations?.length) {
             self.mixer = new THREE.AnimationMixer(model);
             self.clips = model.animations.map(clip => self.mixer.clipAction(clip));
-            console.log(`🎬 ${self.clips.length} clip(s)`);
+            // Read actual duration from first clip in seconds
+            self.clipDuration = model.animations[0].duration;
+            console.log(`🎬 ${self.clips.length} clip(s), duration: ${self.clipDuration.toFixed(2)}s`);
           }
         });
 
@@ -193,49 +197,26 @@
           anime.set(plantPink,  { opacity: 0, scale: 0.7, filter: "brightness(1) saturate(1)" });
         };
 
-        // ── ORGANIC LEAF SWAY — 4 independent loops ─────────────
+        // ── ORGANIC LEAF SWAY — single loop, combined keyframes ─────────────────
         const startLeafSway = () => {
-          const drift = anime({
+          // Stop any existing sway
+          swayAnims.forEach(a => a.pause());
+          swayAnims = [];
+
+          const sway = anime({
             targets: plantGreen,
-            translateX: [
-              { value:  8, duration: 4200, easing: "easeInOutSine" },
-              { value: -5, duration: 5100, easing: "easeInOutSine" },
-              { value:  3, duration: 3800, easing: "easeInOutSine" },
-              { value: -8, duration: 4600, easing: "easeInOutSine" },
+            keyframes: [
+              { translateX:  7, translateY: -4, rotate:  1.0, skewX:  0.6, duration: 4200, easing: "easeInOutSine" },
+              { translateX:  2, translateY:  2, rotate: -0.5, skewX: -0.4, duration: 3800, easing: "easeInOutSine" },
+              { translateX: -6, translateY: -2, rotate:  0.8, skewX:  0.9, duration: 5100, easing: "easeInOutSine" },
+              { translateX: -2, translateY:  5, rotate: -1.2, skewX: -0.7, duration: 4600, easing: "easeInOutSine" },
+              { translateX:  5, translateY:  1, rotate:  0.4, skewX:  0.3, duration: 5400, easing: "easeInOutSine" },
+              { translateX:  0, translateY:  0, rotate:  0.0, skewX:  0.0, duration: 3200, easing: "easeInOutSine" },
             ],
             loop: true,
           });
-          const bob = anime({
-            targets: plantGreen,
-            translateY: [
-              { value: -6, duration: 5800, easing: "easeInOutQuad" },
-              { value:  3, duration: 4300, easing: "easeInOutQuad" },
-              { value: -2, duration: 6100, easing: "easeInOutQuad" },
-              { value:  5, duration: 4900, easing: "easeInOutQuad" },
-            ],
-            loop: true,
-          });
-          const flutter = anime({
-            targets: plantGreen,
-            rotate: [
-              { value:  1.2, duration: 6200, easing: "easeInOutSine" },
-              { value: -0.8, duration: 5400, easing: "easeInOutSine" },
-              { value:  0.5, duration: 7100, easing: "easeInOutSine" },
-              { value: -1.4, duration: 5800, easing: "easeInOutSine" },
-            ],
-            loop: true,
-          });
-          const bend = anime({
-            targets: plantGreen,
-            skewX: [
-              { value:  0.8, duration: 7300, easing: "easeInOutSine" },
-              { value: -0.6, duration: 6100, easing: "easeInOutSine" },
-              { value:  1.0, duration: 5700, easing: "easeInOutSine" },
-              { value: -0.4, duration: 8200, easing: "easeInOutSine" },
-            ],
-            loop: true,
-          });
-          swayAnims = [drift, bob, flutter, bend];
+
+          swayAnims = [sway];
         };
 
         // ── BLOOM PLANTS — auto on marker found ─────────────────
@@ -306,10 +287,12 @@
             easing: "easeInOutSine",
           });
 
-          // Green — surge then return to drift
+          // Green — surge then drift again
+          swayAnims.forEach(a => a.pause()); swayAnims = [];
           anime({
             targets: plantGreen,
-            translateX: [{ value: 16, duration: 500, easing: "easeOutQuad" }],
+            translateX: 14, translateY: -6, rotate: 1.8, skewX: 1.2,
+            duration: 500, easing: "easeOutQuad",
             complete: () => startLeafSway()
           });
 
@@ -346,7 +329,7 @@
           rig.removeAttribute("animation__pop");
           rig.setAttribute("scale", "0.001 0.001 0.001");
           rig.setAttribute("animation__pop", {
-            property: "scale", to: "10 10 10",
+            property: "scale", to: "7 7 7",
             dur: 1400, easing: "easeOutExpo"
           });
           const proxy = { v: 0 };
@@ -367,31 +350,40 @@
           triggered = true;
           tapHint.classList.remove("visible");
 
-          // GLB animation
+          // Play GLB animation
           if (self.clips?.length) {
             self.clips.forEach(a => { a.reset(); a.play(); });
           }
 
-          // Audio loops
+          // Loop swing audio
           if (swingAudio) {
             swingAudio.loop = true;
             swingAudio.currentTime = 0;
             swingAudio.play().catch(e => console.warn("Audio:", e));
           }
 
-          // Plants react
+          // Plants react with swing
           reanimatePlants();
 
-          // Echo rings
-          window.MemoryEcho?.burst();
+          // Use actual clip duration to time rings and re-enable tap
+          // Rings fire 2s before end, tap re-enables 0.5s after end
+          const dur = (self.clipDuration || 29.97) * 1000;
+          const ringDelay = Math.max(dur - 2000, 1000);
+          const tapDelay  = dur + 500;
 
-          // Re-enable tap after 4s
-          setTimeout(() => {
+          if (self.ringTimer) clearTimeout(self.ringTimer);
+          if (self.tapTimer)  clearTimeout(self.tapTimer);
+
+          self.ringTimer = setTimeout(() => {
+            window.MemoryEcho?.burst();
+          }, ringDelay);
+
+          self.tapTimer = setTimeout(() => {
             if (rig.getAttribute("visible")) {
               triggered = false;
               tapHint.classList.add("visible");
             }
-          }, 4000);
+          }, tapDelay);
         };
 
         // ── SHOW — marker found ──────────────────────────────────
@@ -400,6 +392,20 @@
           scanText.style.opacity = "0";
           window.MemoryFX?.start();
           resetPlants();
+          // Monkey plays once only, bird loops continuously
+          if (monkeyAudio) {
+            monkeyAudio.loop = false;
+            monkeyAudio.volume = 0.7;
+            monkeyAudio.currentTime = 0;
+            monkeyAudio.play().catch(e => console.warn("Monkey audio:", e));
+          }
+          if (birdAudio) {
+            birdAudio.loop = true;
+            birdAudio.volume = 0.7;
+            birdAudio.currentTime = 0;
+            birdAudio.play().catch(e => console.warn("Bird audio:", e));
+          }
+
           // Plants bloom → then GLB appears
           bloomPlants(() => showGLB());
         };
@@ -416,7 +422,18 @@
             swingAudio.currentTime = 0;
             swingAudio.loop = false;
           }
-          if (self.clips) self.clips.forEach(a => a.stop());
+          // Fade out ambient sounds
+          [monkeyAudio, birdAudio].forEach(a => {
+            if (!a || a.paused) return;
+            const fade = setInterval(() => {
+              if (a.volume > 0.05) { a.volume = Math.max(0, a.volume - 0.05); }
+              else { clearInterval(fade); a.pause(); a.currentTime = 0; a.volume = 0.7; }
+            }, 80);
+          });
+          if (self.ringTimer) { clearTimeout(self.ringTimer); self.ringTimer = null; }
+          if (self.tapTimer)  { clearTimeout(self.tapTimer);  self.tapTimer  = null; }
+          if (self.clips) { self.clips.forEach(a => a.stop()); }
+          if (self.mixer) { self.mixer.timeScale = 1; }
 
           if (rig.getAttribute("visible")) {
             const meshes = getMeshes();
@@ -486,8 +503,10 @@
       loading-screen="enabled: false"
     >
       <a-assets>
-        <a-asset-item id="swingGLB" src="swing1.glb"></a-asset-item>
-        <audio id="swingAudio" src="swingsound.mp3" preload="auto"></audio>
+        <a-asset-item id="swingGLB" src="swingshort.glb"></a-asset-item>
+        <audio id="swingAudio"  src="swingsound.mp3" preload="auto"></audio>
+        <audio id="monkeyAudio" src="monkey.mp3"     preload="auto"></audio>
+        <audio id="birdAudio"   src="bird.mp3"       preload="auto"></audio>
       </a-assets>
 
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
@@ -495,7 +514,7 @@
       <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
 
       <a-entity mindar-image-target="targetIndex: 0" swing-ar>
-        <a-entity id="swingRig" position="0 0 0" rotation="0 0 0" scale="10 10 10">
+        <a-entity id="swingRig" position="0 0.1 0" rotation="45 0 0" scale="7 7 7">
           <a-gltf-model id="swingModel" src="#swingGLB" position="0 0 0" rotation="0 0 0"></a-gltf-model>
         </a-entity>
       </a-entity>
@@ -575,7 +594,7 @@
     (() => {
       const splash=document.getElementById("splash"),sceneEl=document.querySelector("a-scene");
       splash.addEventListener("click",()=>{
-        ["swingAudio"].forEach(id=>{const a=document.getElementById(id);if(!a)return;const prev=a.muted;a.muted=true;a.play().then(()=>{a.pause();a.currentTime=0;a.muted=prev;}).catch(()=>{a.muted=prev;});});
+        ["swingAudio","monkeyAudio","birdAudio"].forEach(id=>{const a=document.getElementById(id);if(!a)return;const prev=a.muted;a.muted=true;a.play().then(()=>{a.pause();a.currentTime=0;a.muted=prev;}).catch(()=>{a.muted=prev;});});
         const ka=document.createElement("audio");
         ka.src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
         ka.loop=true;ka.volume=0.001;document.body.appendChild(ka);ka.play().catch(()=>{});
