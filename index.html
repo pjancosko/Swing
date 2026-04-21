@@ -163,7 +163,6 @@
           if (model?.animations?.length) {
             self.mixer = new THREE.AnimationMixer(model);
             self.clips = model.animations.map(clip => self.mixer.clipAction(clip));
-            // Read actual duration from first clip in seconds
             self.clipDuration = model.animations[0].duration;
             console.log(`🎬 ${self.clips.length} clip(s), duration: ${self.clipDuration.toFixed(2)}s`);
           }
@@ -197,9 +196,8 @@
           anime.set(plantPink,  { opacity: 0, scale: 0.7, filter: "brightness(1) saturate(1)" });
         };
 
-        // ── ORGANIC LEAF SWAY — single loop, combined keyframes ─────────────────
+        // ── ORGANIC LEAF SWAY ───────────────────────────────────
         const startLeafSway = () => {
-          // Stop any existing sway
           swayAnims.forEach(a => a.pause());
           swayAnims = [];
 
@@ -221,8 +219,6 @@
 
         // ── BLOOM PLANTS — auto on marker found ─────────────────
         const bloomPlants = (onComplete) => {
-
-          // 1. Blue lines — slow grow from bottom
           anime({
             targets: plantBlue,
             opacity: [0, 1],
@@ -238,7 +234,6 @@
             }
           });
 
-          // 2. Green leaves — fade up, then underwater drift
           anime({
             targets: plantGreen,
             opacity: [0, 0.95],
@@ -249,7 +244,6 @@
             complete: () => startLeafSway()
           });
 
-          // 3. Pink fills — elastic bloom last, then glow pulse
           anime({
             targets: plantPink,
             opacity: [0, 1],
@@ -267,7 +261,6 @@
                 ],
                 duration: 3400, loop: true, easing: "easeInOutSine",
               });
-              // Plants done — now show GLB
               if (onComplete) onComplete();
             }
           });
@@ -275,11 +268,9 @@
 
         // ── RE-ANIMATE PLANTS — on tap with swing ───────────────
         const reanimatePlants = () => {
-          // Stop current loops
           swayAnims.forEach(a => a.pause()); swayAnims = [];
           if (pinkAnim) { pinkAnim.pause(); pinkAnim = null; }
 
-          // Blue shimmer
           anime({
             targets: plantBlue,
             opacity: [1, 0.5, 1],
@@ -287,7 +278,6 @@
             easing: "easeInOutSine",
           });
 
-          // Green — surge then drift again
           swayAnims.forEach(a => a.pause()); swayAnims = [];
           anime({
             targets: plantGreen,
@@ -296,7 +286,6 @@
             complete: () => startLeafSway()
           });
 
-          // Pink — bright burst then resume glow
           anime({
             targets: plantPink,
             filter: [
@@ -321,7 +310,7 @@
           });
         };
 
-        // ── SHOW GLB — called after plants finish blooming ──────
+        // ── SHOW GLB — scaled down to 2.8 (40% of previous 7) ───
         const showGLB = () => {
           const meshes = getMeshes();
           setOpacity(meshes, 0);
@@ -329,7 +318,7 @@
           rig.removeAttribute("animation__pop");
           rig.setAttribute("scale", "0.001 0.001 0.001");
           rig.setAttribute("animation__pop", {
-            property: "scale", to: "7 7 7",
+            property: "scale", to: "2.2 2.2 2.2",
             dur: 1400, easing: "easeOutExpo"
           });
           const proxy = { v: 0 };
@@ -350,33 +339,60 @@
           triggered = true;
           tapHint.classList.remove("visible");
 
-          // Play GLB animation
           if (self.clips?.length) {
             self.clips.forEach(a => { a.reset(); a.play(); });
           }
 
-          // Loop swing audio
           if (swingAudio) {
             swingAudio.loop = true;
             swingAudio.currentTime = 0;
             swingAudio.play().catch(e => console.warn("Audio:", e));
           }
 
-          // Plants react with swing
           reanimatePlants();
 
-          // Use actual clip duration to time rings and re-enable tap
-          // Rings fire 2s before end, tap re-enables 0.5s after end
           const dur = (self.clipDuration || 29.97) * 1000;
+
+          // Full 360° Y-axis rotation over the full swing animation.
+          // Head-on tilt (X=0) stays consistent; only the vertical axis rotates.
+          rig.removeAttribute("animation__spin");
+          rig.setAttribute("animation__spin", {
+            property: "rotation",
+            from: "0 0 0",
+            to:   "0 360 0",
+            dur: dur,
+            easing: "easeInOutSine"
+          });
+
           const ringDelay = Math.max(dur - 2000, 1000);
           const tapDelay  = dur + 500;
 
-          if (self.ringTimer) clearTimeout(self.ringTimer);
-          if (self.tapTimer)  clearTimeout(self.tapTimer);
+          if (self.ringTimer)  clearTimeout(self.ringTimer);
+          if (self.tapTimer)   clearTimeout(self.tapTimer);
+          if (self.audioTimer) clearTimeout(self.audioTimer);
 
           self.ringTimer = setTimeout(() => {
             window.MemoryEcho?.burst();
           }, ringDelay);
+
+          // Fade out the swing creaking audio as the animation ends.
+          // Starts 500ms before the animation finishes so the sound tapers
+          // naturally instead of cutting off abruptly.
+          self.audioTimer = setTimeout(() => {
+            if (swingAudio && !swingAudio.paused) {
+              const fade = setInterval(() => {
+                if (swingAudio.volume > 0.05) {
+                  swingAudio.volume = Math.max(0, swingAudio.volume - 0.05);
+                } else {
+                  clearInterval(fade);
+                  swingAudio.pause();
+                  swingAudio.currentTime = 0;
+                  swingAudio.volume = 1.0;
+                  swingAudio.loop = false;
+                }
+              }, 60);
+            }
+          }, Math.max(dur - 500, 500));
 
           self.tapTimer = setTimeout(() => {
             if (rig.getAttribute("visible")) {
@@ -392,7 +408,7 @@
           scanText.style.opacity = "0";
           window.MemoryFX?.start();
           resetPlants();
-          // Monkey plays once only, bird loops continuously
+
           if (monkeyAudio) {
             monkeyAudio.loop = false;
             monkeyAudio.volume = 0.7;
@@ -406,7 +422,6 @@
             birdAudio.play().catch(e => console.warn("Bird audio:", e));
           }
 
-          // Plants bloom → then GLB appears
           bloomPlants(() => showGLB());
         };
 
@@ -422,7 +437,7 @@
             swingAudio.currentTime = 0;
             swingAudio.loop = false;
           }
-          // Fade out ambient sounds
+
           [monkeyAudio, birdAudio].forEach(a => {
             if (!a || a.paused) return;
             const fade = setInterval(() => {
@@ -430,10 +445,16 @@
               else { clearInterval(fade); a.pause(); a.currentTime = 0; a.volume = 0.7; }
             }, 80);
           });
-          if (self.ringTimer) { clearTimeout(self.ringTimer); self.ringTimer = null; }
-          if (self.tapTimer)  { clearTimeout(self.tapTimer);  self.tapTimer  = null; }
+
+          if (self.ringTimer)  { clearTimeout(self.ringTimer);  self.ringTimer  = null; }
+          if (self.tapTimer)   { clearTimeout(self.tapTimer);   self.tapTimer   = null; }
+          if (self.audioTimer) { clearTimeout(self.audioTimer); self.audioTimer = null; }
           if (self.clips) { self.clips.forEach(a => a.stop()); }
           if (self.mixer) { self.mixer.timeScale = 1; }
+
+          // Stop spin and reset rotation to head-on starting angle
+          rig.removeAttribute("animation__spin");
+          rig.setAttribute("rotation", "0 0 0");
 
           if (rig.getAttribute("visible")) {
             const meshes = getMeshes();
@@ -514,7 +535,7 @@
       <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
 
       <a-entity mindar-image-target="targetIndex: 0" swing-ar>
-        <a-entity id="swingRig" position="0 0.1 0" rotation="45 0 0" scale="7 7 7">
+        <a-entity id="swingRig" position="0 -0.3 0" rotation="0 0 0" scale="2.2 2.2 2.2">
           <a-gltf-model id="swingModel" src="#swingGLB" position="0 0 0" rotation="0 0 0"></a-gltf-model>
         </a-entity>
       </a-entity>
