@@ -351,18 +351,18 @@
 
           reanimatePlants();
 
-          const dur = (self.clipDuration || 29.97) * 1000;
+          const dur = (self.clipDuration || 29.97) * 2500;
 
           // Full 360° Y-axis rotation over the full swing animation.
-          // Head-on tilt (X=0) stays consistent; only the vertical axis rotates.
-          rig.removeAttribute("animation__spin");
-          rig.setAttribute("animation__spin", {
-            property: "rotation",
-            from: "0 0 0",
-            to:   "0 360 0",
-            dur: dur,
-            easing: "easeInOutSine"
-          });
+// Head-on tilt (X=0) stays consistent; only the vertical axis rotates.
+rig.removeAttribute("animation__spin");
+rig.setAttribute("animation__spin", {
+  property: "rotation",
+  from: "0 0 0",
+  to:   "0 360 0",
+  dur: dur,
+  easing: "easeInOutSine"
+});
 
           const ringDelay = Math.max(dur - 2000, 1000);
           const tapDelay  = dur + 500;
@@ -517,7 +517,7 @@
     <img id="plant-pink"  class="plant-layer" src="pinkfills.png"   alt="" />
 
     <a-scene
-      mindar-image="imageTargetSrc: targets.mind; autoStart: false; uiScanning: false; uiLoading: false; filterMinCF: 0.001; filterBeta: 0.001;"
+      mindar-image="imageTargetSrc: targets.mind; autoStart: false; uiScanning: false; uiLoading: false; filterMinCF: 0.001; filterBeta: 0.01;"
       renderer="colorManagement: true; physicallyCorrectLights: true"
       vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: true"
