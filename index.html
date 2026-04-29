@@ -93,6 +93,27 @@
         50%     { transform: translateX(-50%) scale(1.05); }
       }
 
+      /* ── Stay Hint ──────────────────────────────── */
+      #stayHint {
+        position: fixed;
+        left: 50%;
+        bottom: 32px;
+        transform: translateX(-50%);
+        padding: 7px 20px;
+        border-radius: 20px;
+        background: rgba(18, 14, 50, 0.55);
+        border: 1px solid rgba(100, 110, 200, 0.4);
+        color: rgba(200, 210, 255, 0.85);
+        font-family: Georgia, serif;
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        z-index: 1000001;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 1.4s ease;
+      }
+      #stayHint.visible { opacity: 1; }
+
       /* ── Plant layers ─────────────────────────── */
       .plant-layer {
         position: fixed; inset: 0;
@@ -137,18 +158,19 @@
     <script>
     AFRAME.registerComponent("swing-ar", {
       init() {
-        const self       = this;
-        const target     = this.el;
-        const rig        = target.querySelector("#swingRig");
-        const modelEl    = target.querySelector("#swingModel");
+        const self        = this;
+        const target      = this.el;
+        const rig         = target.querySelector("#swingRig");
+        const modelEl     = target.querySelector("#swingModel");
         const swingAudio  = document.querySelector("#swingAudio");
         const monkeyAudio = document.querySelector("#monkeyAudio");
         const birdAudio   = document.querySelector("#birdAudio");
-        const tapHint    = document.querySelector("#tapHint");
-        const scanText   = document.querySelector("#scanText");
-        const plantBlue  = document.getElementById("plant-blue");
-        const plantGreen = document.getElementById("plant-green");
-        const plantPink  = document.getElementById("plant-pink");
+        const tapHint     = document.querySelector("#tapHint");
+        const scanText    = document.querySelector("#scanText");
+        const stayHint    = document.querySelector("#stayHint");
+        const plantBlue   = document.getElementById("plant-blue");
+        const plantGreen  = document.getElementById("plant-green");
+        const plantPink   = document.getElementById("plant-pink");
 
         let triggered = false;
         let swayAnims = [];
@@ -217,7 +239,7 @@
           swayAnims = [sway];
         };
 
-        // ── BLOOM PLANTS — auto on marker found ─────────────────
+        // ── BLOOM PLANTS ────────────────────────────────────────
         const bloomPlants = (onComplete) => {
           anime({
             targets: plantBlue,
@@ -266,7 +288,7 @@
           });
         };
 
-        // ── RE-ANIMATE PLANTS — on tap with swing ───────────────
+        // ── RE-ANIMATE PLANTS ───────────────────────────────────
         const reanimatePlants = () => {
           swayAnims.forEach(a => a.pause()); swayAnims = [];
           if (pinkAnim) { pinkAnim.pause(); pinkAnim = null; }
@@ -310,7 +332,7 @@
           });
         };
 
-        // ── SHOW GLB — scaled down to 2.8 (40% of previous 7) ───
+        // ── SHOW GLB ────────────────────────────────────────────
         const showGLB = () => {
           const meshes = getMeshes();
           setOpacity(meshes, 0);
@@ -333,7 +355,7 @@
           });
         };
 
-        // ── TRIGGER SWING — on tap ───────────────────────────────
+        // ── TRIGGER SWING ───────────────────────────────────────
         const triggerSwing = () => {
           if (triggered) return;
           triggered = true;
@@ -353,16 +375,14 @@
 
           const dur = (self.clipDuration || 29.97) * 2500;
 
-          // Full 360° Y-axis rotation over the full swing animation.
-// Head-on tilt (X=0) stays consistent; only the vertical axis rotates.
-rig.removeAttribute("animation__spin");
-rig.setAttribute("animation__spin", {
-  property: "rotation",
-  from: "0 0 0",
-  to:   "0 360 0",
-  dur: dur,
-  easing: "easeInOutSine"
-});
+          rig.removeAttribute("animation__spin");
+          rig.setAttribute("animation__spin", {
+            property: "rotation",
+            from: "0 0 0",
+            to:   "0 360 0",
+            dur: dur,
+            easing: "easeInOutSine"
+          });
 
           const ringDelay = Math.max(dur - 2000, 1000);
           const tapDelay  = dur + 500;
@@ -375,9 +395,6 @@ rig.setAttribute("animation__spin", {
             window.MemoryEcho?.burst();
           }, ringDelay);
 
-          // Fade out the swing creaking audio as the animation ends.
-          // Starts 500ms before the animation finishes so the sound tapers
-          // naturally instead of cutting off abruptly.
           self.audioTimer = setTimeout(() => {
             if (swingAudio && !swingAudio.paused) {
               const fade = setInterval(() => {
@@ -406,6 +423,7 @@ rig.setAttribute("animation__spin", {
         const show = () => {
           triggered = false;
           scanText.style.opacity = "0";
+          stayHint.classList.add("visible");
           window.MemoryFX?.start();
           resetPlants();
 
@@ -429,6 +447,7 @@ rig.setAttribute("animation__spin", {
         const hide = () => {
           window.MemoryFX?.stop();
           tapHint.classList.remove("visible");
+          stayHint.classList.remove("visible");
           triggered = false;
           resetPlants();
 
@@ -452,7 +471,6 @@ rig.setAttribute("animation__spin", {
           if (self.clips) { self.clips.forEach(a => a.stop()); }
           if (self.mixer) { self.mixer.timeScale = 1; }
 
-          // Stop spin and reset rotation to head-on starting angle
           rig.removeAttribute("animation__spin");
           rig.setAttribute("rotation", "0 0 0");
 
@@ -510,6 +528,7 @@ rig.setAttribute("animation__spin", {
     <div id="scanFrame"></div>
     <div id="scanText">Point your camera at the marker</div>
     <div id="tapHint">🌿 Tap to Swing</div>
+    <div id="stayHint">⊹ keep marker in view ⊹</div>
 
     <!-- Plant PNGs -->
     <img id="plant-blue"  class="plant-layer" src="bluelines.png"   alt="" />
